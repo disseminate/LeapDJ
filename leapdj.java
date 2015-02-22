@@ -18,6 +18,8 @@ class DJListener extends Listener {
 		System.out.println( "Connected to LeapMotion.");
 		System.out.println( "Connecting MIDI Device..." );
 
+		timers = new LeapDJTimer[8];
+
 		MidiDevice.Info[] info = MidiSystem.getMidiDeviceInfo();
 		for( int i = 0; i < info.length; i++ ) {
 			if( info[i].getName().equals( "LeapDJ" ) ) {
@@ -56,7 +58,7 @@ class DJListener extends Listener {
 		try {
 			ShortMessage shortMessage = new ShortMessage();
 			shortMessage.setMessage(type, cmd, chan, val);
-			rec.send( shortMessage, out.getMicrosecondPosition() );
+			rec.send( shortMessage, -1 );
 		} catch( InvalidMidiDataException e ) {
 			e.printStackTrace();
 		}
@@ -147,40 +149,28 @@ class DJListener extends Listener {
 		}
 	}
 
-	private long turnOffTurntableLeft = -1;
-	private long turnOffTurntableRight= -1;
+	private LeapDJTimer timers[];
 
 	public void handleKeyTap( KeyTapGesture g ) {
 		HandList hands = g.hands();
 
 		for( int i = 0; i < hands.count(); i++ ) {
 			if( hands.get( i ).isLeft() ) {
-				turnOffTurntableLeft = g.frame().timestamp() + (long)(0.5 * 1000000);
+				timers[0] = new LeapDJTimer( rec, g.frame().timestamp() + (long)(0.5 * 1000000), 1, 2, 0, 1 );
+				timers[1] = new LeapDJTimer( rec, g.frame().timestamp() + (long)(0.5 * 1000000), 1, 3, 0, 127 );
 			} else {
-				turnOffTurntableRight = g.frame().timestamp() + (long)(0.5 * 1000000);
+				timers[2] = new LeapDJTimer( rec, g.frame().timestamp() + (long)(0.5 * 1000000), 2, 2, 0, 1 );
+				timers[3] = new LeapDJTimer( rec, g.frame().timestamp() + (long)(0.5 * 1000000), 2, 3, 0, 127 );
 			}
 		}
 	}
 	
 	private void handleTimers( Frame f ) {
-		if( turnOffTurntableLeft > -1 ) {
-			if( f.timestamp() > turnOffTurntableLeft ) {
-				sendMidiMessage( ShortMessage.CONTROL_CHANGE, 1, 3, 0 );
-				sendMidiMessage( ShortMessage.CONTROL_CHANGE, 1, 2, 0 );
-				turnOffTurntableLeft = -1;
-			} else {
-				sendMidiMessage( ShortMessage.CONTROL_CHANGE, 1, 2, 1 );
-				sendMidiMessage( ShortMessage.CONTROL_CHANGE, 1, 3, 127 );
-			}
-		}
-		if( turnOffTurntableRight > -1 ) {
-			if( f.timestamp() > turnOffTurntableRight ) {
-				sendMidiMessage( ShortMessage.CONTROL_CHANGE, 2, 3, 0 );
-				sendMidiMessage( ShortMessage.CONTROL_CHANGE, 2, 2, 0 );
-				turnOffTurntableRight = -1;
-			} else {
-				sendMidiMessage( ShortMessage.CONTROL_CHANGE, 2, 2, 1 );
-				sendMidiMessage( ShortMessage.CONTROL_CHANGE, 2, 3, 127 );
+		for( int i = 0; i < timers.length; i++ ) {
+			if( timers[i] != null ) {
+				if( timers[i].checkTimer( f.timestamp() ) ) {
+					timers[i] = null;
+				}
 			}
 		}
 	}
@@ -218,6 +208,52 @@ class DJListener extends Listener {
 		}
 
 		lastFrame = frame;
+	}
+}
+
+class LeapDJTimer {
+	private Receiver rec;
+	private long time;
+	private int chan;
+	private int m;
+	private int val;
+	private int valOff;
+
+	public LeapDJTimer( Receiver rec, long time, int chan, int m, int val, int valOff ) {
+		this.rec = rec;
+		this.time = time;
+		this.chan = chan;
+		this.m = m;
+		this.val = val;
+		this.valOff = valOff;
+	}
+
+	private void sendMessage( int send ) {
+		try {
+			ShortMessage shortMessage = new ShortMessage();
+			shortMessage.setMessage(ShortMessage.CONTROL_CHANGE, chan, m, send);
+			rec.send( shortMessage, -1 );
+		} catch( InvalidMidiDataException e ) {
+			e.printStackTrace();
+		}
+	}
+
+	public boolean checkTimer( long timestamp ) {
+		try {
+			ShortMessage shortMessage = new ShortMessage();
+			if( timestamp > time ) {
+				shortMessage.setMessage(ShortMessage.CONTROL_CHANGE, chan, m, val);
+				rec.send( shortMessage, -1 );
+				return true;
+			} else {
+				shortMessage.setMessage(ShortMessage.CONTROL_CHANGE, chan, m, valOff);
+				rec.send( shortMessage, -1 );
+				return false;
+			}
+		} catch( InvalidMidiDataException e ) {
+			e.printStackTrace();
+		}
+		return false;
 	}
 }
 
