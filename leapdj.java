@@ -90,14 +90,11 @@ class DJListener extends Listener {
 		return true;
 	}
 
-	public void resetFilter( int chan ) {
-		sendMidiMessage( ShortMessage.CONTROL_CHANGE, chan, 0, 63 );
-		sendMidiMessage( ShortMessage.CONTROL_CHANGE, chan, 1, 63 );
+	public void setMidi( int chan, int m, int val ) {
+		sendMidiMessage( ShortMessage.CONTROL_CHANGE, chan, m, val );
 	}
 
-	public boolean isFingerSolo( Hand h, int i ) {
-		Finger f = h.fingers().get( i );
-
+	public boolean isFingerSolo( Hand h, Finger f ) {
 		if( f.isValid() && f.isExtended() && h.fingers().extended().count() == 1 ) {
 			return true;
 		}
@@ -105,8 +102,7 @@ class DJListener extends Listener {
 		return false;
 	}
 
-	public float getPointingPosition( Hand h, int i ) {
-		Finger f = h.fingers().get( i );
+	public float getPointingPosition( Hand h, Finger f ) {
 		if( f.isValid() ) {
 			Vector fPos = f.stabilizedTipPosition();
 			float x = fPos.getX();
@@ -127,16 +123,6 @@ class DJListener extends Listener {
 		}
 		roll = roll / (3.14159f);
 
-		Vector handSpeed = h.palmVelocity();
-
-		if( handSpeed.magnitude() > 100 ) {
-			float perc = clamp( ( handSpeed.magnitude() - 300 ) / 200, -2, 2 );
-			sendMidiMessage( ShortMessage.CONTROL_CHANGE, chan, 1, 1 );
-			sendMidiMessage( ShortMessage.CONTROL_CHANGE, chan, 2, 1 );
-		} else {
-			sendMidiMessage( ShortMessage.CONTROL_CHANGE, chan, 2, 0 );
-		}
-
 		if( isHandExtended( h ) ) {
 			if( sphereRad > 45 ) {
 				int pitchMidi = clamp( (int)(((pitch+1)/2)*127), 0, 127 );
@@ -145,10 +131,15 @@ class DJListener extends Listener {
 				int rollMidi = clamp( (int)((roll / 2) * 127), 0, 127 );
 				//sendMidiMessage( ShortMessage.CONTROL_CHANGE, chan, 1, rollMidi );
 			} else {
-				resetFilter( chan );
+				setMidi( chan, 0, 63 );
 			}
+		} else if( isFingerSolo( h, h.fingers().frontmost() ) ) {
+			float f = getPointingPosition( h, h.fingers().frontmost() );
+			int fingerMidi = clamp( (int)(((f / 100)+1)/2 * 127), 0, 127 );
+			sendMidiMessage( ShortMessage.CONTROL_CHANGE, chan, 1, fingerMidi );
 		} else {
-			resetFilter( chan );
+			setMidi( chan, 0, 63 );
+			setMidi( chan, 1, 0 );
 		}
 	}
 
@@ -171,6 +162,11 @@ class DJListener extends Listener {
 				Hand right = hands.rightmost();
 				onFrameHand( ctrl, right, 1 );
 			}
+		} else {
+			setMidi( 1, 0, 63 );
+			setMidi( 2, 0, 63 );
+			setMidi( 1, 1, 0 );
+			setMidi( 2, 1, 0 );
 		}
 
 		GestureList gesturesInFrame = frame.gestures();
