@@ -106,6 +106,10 @@ class DJListener extends Listener {
 		if( f.isValid() ) {
 			Vector fPos = f.stabilizedTipPosition();
 			float x = fPos.getX();
+
+			if( x < 0 )
+				x *= -1;
+
 			return x;
 		}
 		return 0;
@@ -135,7 +139,7 @@ class DJListener extends Listener {
 			}
 		} else if( isFingerSolo( h, h.fingers().frontmost() ) ) {
 			float f = getPointingPosition( h, h.fingers().frontmost() );
-			int fingerMidi = clamp( (int)(((f / 100)+1)/2 * 127), 0, 127 );
+			int fingerMidi = clamp( (int)((f / 100) * 127), 0, 127 );
 			sendMidiMessage( ShortMessage.CONTROL_CHANGE, chan, 1, fingerMidi );
 		} else {
 			setMidi( chan, 0, 63 );
@@ -143,16 +147,49 @@ class DJListener extends Listener {
 		}
 	}
 
-	public void handleCircle( CircleGesture g ) {
-		Pointable tapper = g.pointable();
-		if( tapper.isFinger() ) {
-			Finger f = (Finger)tapper;
-			System.out.println( f.type() );
+	private long turnOffTurntableLeft = -1;
+	private long turnOffTurntableRight= -1;
+
+	public void handleKeyTap( KeyTapGesture g ) {
+		HandList hands = g.hands();
+
+		for( int i = 0; i < hands.count(); i++ ) {
+			if( hands.get( i ).isLeft() ) {
+				turnOffTurntableLeft = g.frame().timestamp() + (long)(0.5 * 1000000);
+			} else {
+				turnOffTurntableRight = g.frame().timestamp() + (long)(0.5 * 1000000);
+			}
+		}
+	}
+	
+	private void handleTimers( Frame f ) {
+		if( turnOffTurntableLeft > -1 ) {
+			if( f.timestamp() > turnOffTurntableLeft ) {
+				sendMidiMessage( ShortMessage.CONTROL_CHANGE, 1, 3, 0 );
+				sendMidiMessage( ShortMessage.CONTROL_CHANGE, 1, 2, 0 );
+				turnOffTurntableLeft = -1;
+			} else {
+				sendMidiMessage( ShortMessage.CONTROL_CHANGE, 1, 2, 1 );
+				sendMidiMessage( ShortMessage.CONTROL_CHANGE, 1, 3, 127 );
+			}
+		}
+		if( turnOffTurntableRight > -1 ) {
+			if( f.timestamp() > turnOffTurntableRight ) {
+				sendMidiMessage( ShortMessage.CONTROL_CHANGE, 2, 3, 0 );
+				sendMidiMessage( ShortMessage.CONTROL_CHANGE, 2, 2, 0 );
+				turnOffTurntableRight = -1;
+			} else {
+				sendMidiMessage( ShortMessage.CONTROL_CHANGE, 2, 2, 1 );
+				sendMidiMessage( ShortMessage.CONTROL_CHANGE, 2, 3, 127 );
+			}
 		}
 	}
 
 	public void onFrame( Controller ctrl ) {
 		Frame frame = ctrl.frame();
+
+		handleTimers( frame );
+
 		HandList hands = frame.hands();
 
 		if( hands.count() > 0 ) {
@@ -174,8 +211,8 @@ class DJListener extends Listener {
 		if( gesturesInFrame.count() > 0 ) {
 			for( int i = 0; i < gesturesInFrame.count(); i++ ) {
 				Gesture g = gesturesInFrame.get( i );
-				if( g.type() == Gesture.Type.TYPE_CIRCLE ) {
-					handleCircle( new CircleGesture( g ) );
+				if( g.type() == Gesture.Type.TYPE_KEY_TAP ) {
+					handleKeyTap( new KeyTapGesture( g ) );
 				}
 			}
 		}
@@ -189,7 +226,7 @@ class LeapDJ {
 		DJListener listen = new DJListener();
 		Controller ctrl = new Controller();
 		ctrl.setPolicy(Controller.PolicyFlag.POLICY_BACKGROUND_FRAMES);
-		ctrl.enableGesture(Gesture.Type.TYPE_CIRCLE);
+		ctrl.enableGesture(Gesture.Type.TYPE_KEY_TAP);
 
 		ctrl.addListener( listen );
 
